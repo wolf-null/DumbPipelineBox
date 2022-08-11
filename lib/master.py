@@ -6,6 +6,7 @@ from .worker import Worker
 
 class Master:
     DEBUG = Worker.DEBUG
+    JOIN_TIMEOUT = -1
 
     def __init__(self, worker_implementation:Worker, callback=None):
         self._worker_task_queues = list()  # type: List[multiprocessing.Queue]
@@ -17,7 +18,7 @@ class Master:
 
         self._callback = callback
 
-        self._master_task_queue = multiprocessing.Queue()
+        self._master_task_list = list()
         self._task_ids = list()
 
         self._task_counter = 1
@@ -51,12 +52,13 @@ class Master:
         task_wrapped = task_id, task
         self._task_ids.append(task_id)
         self._task_counter += 1
-        self._master_task_queue.put(task_wrapped)
+        self._master_task_list.append(task_wrapped)
         if self.DEBUG:
             print(f'[Master]: + task {task_id}')
         return task_id
 
     def deliver_task_to_all_workers(self, task:object):
+        # TODO REFACTOR
         for worker_idx in range(len(self._workers)):
             worker_task_event = self._worker_task_events[worker_idx]
             worker_task_queue = self._worker_task_queues[worker_idx]
@@ -93,13 +95,26 @@ class Master:
 
     def wait_for_any_worker_result_event(self, per_worker_timeout=0.1):
         while True:
+            # The problem here is that if a process has no task attached the method will wait for in anyway
             for worker_result_event in self._worker_result_events:
                 if worker_result_event.wait(per_worker_timeout):
                     return
 
     def join_all_workers(self):
+        """Returns when all Worker processes are finished"""
+
         for worker in self._workers: # type: multiprocessing.Process
-            worker.join()
+            if self.JOIN_TIMEOUT >= 0:
+                worker.join(timeout=self.JOIN_TIMEOUT)
+            else:
+                worker.join()
+
+    def terminate_all_workers(self):
+        """Terminates all the treads"""
+
+        for worker in self._workers: # type: multiprocessing.Process
+            if worker.is_alive():
+                worker.terminate()
 
     def run(self, *args):
         for arg in args:
@@ -110,14 +125,14 @@ class Master:
         while True:
             # Deliver tasks while possible
             while True:
-                if self._master_task_queue.empty():
+                if len(self._master_task_list) == 0:
                     break
 
-                task = self._master_task_queue.get()
+                task = self._master_task_list.pop()
                 delivered = self.deliver_task_to_idle_worker(task)  # Deliverance cause immediate execution
                 if not delivered:
                     # Return non delivered task back to the queue
-                    self._master_task_queue.put(task)
+                    self._master_task_list.append(task)
                     break
 
             self.wait_for_any_worker_result_event()
@@ -138,12 +153,15 @@ class Master:
                 yield result
 
             if len(self._task_ids) == 0:
+                # This assumes no task insertion from worker side
                 return
 
     def halt(self, join:bool = True):
         self.deliver_task_to_all_workers((-1, Worker.Halt()))
         if join:
             self.join_all_workers()
+        self.terminate_all_workers()
+
 
     def __enter__(self):
         return self
