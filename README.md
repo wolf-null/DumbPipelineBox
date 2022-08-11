@@ -23,7 +23,7 @@ Oh, we've got plans...
 class MyWorkerSubclass(Worker):
     def __init__(self, my_parameter_a, my_parameter_b, ...,  **kwargs):
         # Always call the super()
-        super(DumbWorker, self).__init__(**kwargs)
+        super(MyWorkerSubclass, self).__init__(**kwargs)
 
         # Some specific init the class you need to do before any work starts
         # ...
