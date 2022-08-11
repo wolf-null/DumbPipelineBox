@@ -2,18 +2,19 @@ import multiprocessing
 from typing import List, Type
 
 from .worker import Worker
+from .task_monitor import AbstractTaskMonitor
 
 
 class Master:
     DEBUG = Worker.DEBUG
-    JOIN_TIMEOUT = -1
+    HALT_TIMEOUT = 1
 
-    def __init__(self, worker_implementation:Worker, callback=None):
+    def __init__(self, worker_implementation:Worker, callback=None, monitor : AbstractTaskMonitor=None):
         self._worker_task_queues = list()  # type: List[multiprocessing.Queue]
         self._worker_result_queues = list()  # type: List[multiprocessing.Queue]
         self._worker_task_events = list()  # type: List[multiprocessing.Event]
         self._worker_result_events = list()  # type: List[multiprocessing.Event]
-        self._workers = list()  # type: List[Worker]
+        self._worker_processes = list()  # type: List[Worker]
         self._worker_class = worker_implementation  # type: Type[Worker]
 
         self._callback = callback
@@ -23,6 +24,8 @@ class Master:
 
         self._task_counter = 1
         self._tasks_passsed = 0
+
+        self._task_monitor = monitor  # type: AbstractTaskMonitor
 
     def add_worker(self, **kwargs):
         task_queue = multiprocessing.Queue()
@@ -45,7 +48,10 @@ class Master:
         self._worker_result_queues.append(result_queue)
         self._worker_task_events.append(task_event)
         self._worker_result_events.append(result_event)
-        self._workers.append(worker)
+        self._worker_processes.append(worker)
+
+        if self._task_monitor is not None:
+            self._task_monitor.on_worker_added(worker_idx=len(self._worker_processes)-1, **kwargs)
 
     def add_task(self, task:object):
         task_id = self._task_counter
@@ -55,34 +61,42 @@ class Master:
         self._master_task_list.append(task_wrapped)
         if self.DEBUG:
             print(f'[Master]: + task {task_id}')
+
+        if self._task_monitor is not None:
+            self._task_monitor.on_task_added(task_id=task_id, task=task)
+
         return task_id
+
+    def deliver_task_to_worker(self, worker_idx, task:object):
+        worker_task_event = self._worker_task_events[worker_idx]
+        worker_task_queue = self._worker_task_queues[worker_idx]
+
+        if self._task_monitor is not None:
+            task_id = task[0]
+            self._task_monitor.on_task_attached_to_worker(worker_idx=worker_idx, task_id=task_id)
+
+        worker_task_queue.put(task)
+        if self.DEBUG:
+            print(f'[Master]: Delivered {repr(task)} --> {worker_idx}')
+        worker_task_event.set()
 
     def deliver_task_to_all_workers(self, task:object):
         # TODO REFACTOR
-        for worker_idx in range(len(self._workers)):
-            worker_task_event = self._worker_task_events[worker_idx]
-            worker_task_queue = self._worker_task_queues[worker_idx]
-            worker_task_queue.put(task)
-            if self.DEBUG:
-                print(f'[Master]: Delivered {repr(task)} --> {worker_idx}')
-            worker_task_event.set()
+        for worker_idx in range(len(self._worker_processes)):
+            self.deliver_task_to_worker(worker_idx=worker_idx, task=task)
 
     def deliver_task_to_idle_worker(self, task:object) -> bool:
         # Find free worker
-        for worker_idx in range(len(self._workers)):
+        for worker_idx in range(len(self._worker_processes)):
             worker_task_event = self._worker_task_events[worker_idx]
             if not worker_task_event.is_set():
-                worker_task_queue = self._worker_task_queues[worker_idx]
-                worker_task_queue.put(task)
-                if self.DEBUG:
-                    print(f'[Master]: Delivered {repr(task)} --> {worker_idx}')
-                worker_task_event.set()
+                self.deliver_task_to_worker(worker_idx=worker_idx, task=task)
                 return True
         return False
 
     def collect_result_from_workers(self) -> list:
         results = list()
-        for worker_idx in range(len(self._workers)):
+        for worker_idx in range(len(self._worker_processes)):
             worker_result_event = self._worker_result_events[worker_idx]
             worker_result_queue = self._worker_result_queues[worker_idx]
             if worker_result_event.is_set():
@@ -90,6 +104,9 @@ class Master:
                     result = worker_result_queue.get()
                     if self.DEBUG:
                         print('[Master]: [Result]: ', result)
+                    if self._task_monitor is not None:
+                        task_id = result[0]
+                        self._task_monitor.on_result_retrieved_from_worker(worker_idx=worker_idx, task_id=task_id)
                     results.append(result)
         return results
 
@@ -102,18 +119,21 @@ class Master:
 
     def join_all_workers(self):
         """Returns when all Worker processes are finished"""
-
-        for worker in self._workers: # type: multiprocessing.Process
-            if self.JOIN_TIMEOUT >= 0:
-                worker.join(timeout=self.JOIN_TIMEOUT)
+        for worker_idx, worker in enumerate(self._worker_processes): # type: multiprocessing.Process
+            if self.DEBUG:
+                print(f'[Master]: Joining the {worker_idx} worker to finish')
+            if self.HALT_TIMEOUT is not None:
+                worker.join(timeout=self.HALT_TIMEOUT)
             else:
                 worker.join()
 
     def terminate_all_workers(self):
         """Terminates all the treads"""
 
-        for worker in self._workers: # type: multiprocessing.Process
+        for worker_idx, worker in enumerate(self._worker_processes): # type: multiprocessing.Process
             if worker.is_alive():
+                if self.DEBUG:
+                    print(f'[Master]: Terminating the {worker_idx} worker')
                 worker.terminate()
 
     def run(self, *args):

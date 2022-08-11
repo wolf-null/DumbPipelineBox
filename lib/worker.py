@@ -22,15 +22,20 @@ class Worker:
         def __repr__(self):
             return '<WorkerHalt>'
 
-    class Finished:
-        def __repr__(self):
-            return '<WorkerFinished>'
-
     DEBUG = False
-    EVENT_TIMEOUT = 0.1
+    # Debug output option
 
-    class WorkerFinishedException(Exception):
-        pass
+    EVENT_TIMEOUT = 0.25
+    # Since _task_event is set up and cleared in two async-independent processes (Master and Worker)
+    # There is a probability to miss the last several tasks (including the Worker.Halt() task)
+    # Since this there is a timeout for run() cycle freezes
+    # Set to None for infinite timeout (useful for ~synchronized execution of workers - not implemented mode yet)
+    # If None recommended to turn CHECK_QUEUE_BEFORE_TASK_AWAITING to True
+
+    CHECK_QUEUE_BEFORE_TASK_AWAITING = True
+    # If set to True run() cycle checks for incoming tasks and if there are DON'T wait the Worker.task_event to start tasks
+    # And runs queued tasks immediately.
+    # If set to False will wait for event_timeout (if not None) or wait for task_event to start
 
     def __init__(self,
                  task_queue:multiprocessing.Queue,
@@ -69,10 +74,11 @@ class Worker:
         if self.DEBUG:
             print('[Worker]: Run!')
         while True:
-            if self._task_event_timeout is not None:
-                self._task_event.wait(timeout=self._task_event_timeout)
-            else:
-                self._task_event.wait()
+            if self.CHECK_QUEUE_BEFORE_TASK_AWAITING and self._task_queue.empty() or not self.CHECK_QUEUE_BEFORE_TASK_AWAITING:
+                if self._task_event_timeout is not None:
+                    self._task_event.wait(timeout=self._task_event_timeout)
+                else:
+                    self._task_event.wait()
 
             # Get all queued tasks
             pending_tasks = list()

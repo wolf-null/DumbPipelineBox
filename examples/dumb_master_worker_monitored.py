@@ -1,7 +1,7 @@
 from lib.worker import Worker
 from lib.master import Master
+from lib.task_monitor import MaxTaskCounter
 from random import randint
-import time
 
 
 class DumbWorker(Worker):
@@ -14,18 +14,23 @@ class DumbWorker(Worker):
 
     def run_task(self, argument:object) -> object:
         # Dumb worker sleeps for 2 sec and reports the job is done.
-        time.sleep(2)
-        return f'{self._seed} DONE WITH {argument}'
+        some_sum = sum([randint(0,1) for _ in range(100000)])
+        return f'{self._seed} DONE WITH {argument} and sum {some_sum}'
 
 
 if __name__ == '__main__':
-    with Master(DumbWorker) as dumb_master:
+    monitor = MaxTaskCounter()
+
+    with Master(DumbWorker, monitor=monitor) as dumb_master:
         # Add workers. name is just the parameter we defined. It is not present in the base Worker class
         dumb_master.add_worker(name='WORKER-Alice')
         dumb_master.add_worker(name='WORKER-Bob')
+        dumb_master.add_worker(name='WORKER-Charlie')
+        dumb_master.add_worker(name='WORKER-Dave')
 
-        for task_id, result in dumb_master.run('dumb-task-1', 'dumb-task-2', 'dumb-task-3', 'dumb-task-4', 'dumb-task-5'):
-            print(f'[DumbTest]: {repr(result)}')
+        for task_id, result in dumb_master.run(*[f'task{str(t).zfill(5)}' for t in range(10000)]):
+            #print(f'[DumbTest]: {repr(result)}')
+            print(monitor)
     print('[DumbTest]: All done')
 
 
