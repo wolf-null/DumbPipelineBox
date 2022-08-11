@@ -1,6 +1,6 @@
 from lib.worker import Worker
 from lib.master import Master
-from lib.task_monitor import MaxTaskCounter
+from lib.monitors.workload_max_counter import WorkloadMaxCounter
 from random import randint
 
 
@@ -19,7 +19,7 @@ class DumbWorker(Worker):
 
 
 if __name__ == '__main__':
-    monitor = MaxTaskCounter()
+    monitor = WorkloadMaxCounter()
 
     with Master(DumbWorker, monitor=monitor) as dumb_master:
         # Add workers. name is just the parameter we defined. It is not present in the base Worker class
