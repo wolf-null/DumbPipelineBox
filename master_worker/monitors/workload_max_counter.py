@@ -1,4 +1,4 @@
-from master_worker.task_monitor import AbstractTaskMonitor
+from ..task_monitor import AbstractTaskMonitor
 
 
 class WorkloadMaxCounter(AbstractTaskMonitor):

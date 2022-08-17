@@ -1,15 +1,25 @@
 import multiprocessing
-from typing import List, Type
+from typing import List, Type, Union
 
 from .worker import Worker
 from .task_monitor import AbstractTaskMonitor
 
 
 class Master:
-    DEBUG = Worker.DEBUG
     HALT_TIMEOUT = 1
 
-    def __init__(self, worker_implementation:Worker, callback=None, monitor : AbstractTaskMonitor=None):
+    def __init__(self, worker_implementation:Worker, callback=None, monitor : AbstractTaskMonitor=None, verbose=False):
+        assert issubclass(worker_implementation, Worker),\
+            ValueError('worker_implementation parameter must be a Worker inheritor')
+        assert callable(callback) or callback is None,\
+            ValueError('callback must be a callable(progress:int, max:int) or None')
+        assert monitor is None or isinstance(monitor, AbstractTaskMonitor),\
+            ValueError('monitor must be an inheritor of AbstractTaskMonitor')
+        assert isinstance(verbose, bool),\
+            ValueError('verbose parameter must be True, False or None (for default)')
+
+        self._verbose = verbose
+
         self._worker_task_queues = list()  # type: List[multiprocessing.Queue]
         self._worker_result_queues = list()  # type: List[multiprocessing.Queue]
         self._worker_task_events = list()  # type: List[multiprocessing.Event]
@@ -59,7 +69,7 @@ class Master:
         self._task_ids.append(task_id)
         self._task_counter += 1
         self._master_task_list.append(task_wrapped)
-        if self.DEBUG:
+        if self._verbose:
             print(f'[Master]: + task {task_id}')
 
         if self._task_monitor is not None:
@@ -76,7 +86,7 @@ class Master:
             self._task_monitor.on_task_attached_to_worker(worker_idx=worker_idx, task_id=task_id)
 
         worker_task_queue.put(task)
-        if self.DEBUG:
+        if self._verbose:
             print(f'[Master]: Delivered {repr(task)} --> {worker_idx}')
         worker_task_event.set()
 
@@ -102,7 +112,7 @@ class Master:
             if worker_result_event.is_set():
                 while not worker_result_queue.empty():
                     result = worker_result_queue.get()
-                    if self.DEBUG:
+                    if self._verbose:
                         print('[Master]: [Result]: ', result)
                     if self._task_monitor is not None:
                         task_id = result[0]
@@ -120,7 +130,7 @@ class Master:
     def join_all_workers(self):
         """Returns when all Worker processes are finished"""
         for worker_idx, worker in enumerate(self._worker_processes): # type: multiprocessing.Process
-            if self.DEBUG:
+            if self._verbose:
                 print(f'[Master]: Joining the {worker_idx} worker to finish')
             if self.HALT_TIMEOUT is not None:
                 worker.join(timeout=self.HALT_TIMEOUT)
@@ -132,7 +142,7 @@ class Master:
 
         for worker_idx, worker in enumerate(self._worker_processes): # type: multiprocessing.Process
             if worker.is_alive():
-                if self.DEBUG:
+                if self._verbose:
                     print(f'[Master]: Terminating the {worker_idx} worker')
                 worker.terminate()
 
@@ -162,7 +172,7 @@ class Master:
                 task_id = result[0]
                 self._task_ids.remove(task_id)
 
-                if self.DEBUG:
+                if self._verbose:
                     print(f'[Master]: - task {task_id}')
 
                 if callable(self._callback):
@@ -186,7 +196,7 @@ class Master:
             print('[Master]: Error during process halt')
             raise errmsg
         else:
-            if self.DEBUG:
+            if self._verbose:
                 print('[Master]: Halted')
 
     def __enter__(self):

@@ -6,7 +6,7 @@ from enum import Enum
 
 class Worker:
     """
-    LOGIC:
+    LOGIC (basically):
         - A WorkerProcess() is started from the outside of the module.
         - It initializes Worker class with the arguments passed
         - Then it starts the run() process
@@ -21,9 +21,6 @@ class Worker:
     class Halt:
         def __repr__(self):
             return '<WorkerHalt>'
-
-    DEBUG = False
-    # Debug output option
 
     EVENT_TIMEOUT = 0.25
     # Since _task_event is set up and cleared in two async-independent processes (Master and Worker)
@@ -43,6 +40,7 @@ class Worker:
                  task_event:multiprocessing.Event,
                  result_event: multiprocessing.Event,
                  task_event_timeout : Union[float, None]= EVENT_TIMEOUT,
+                 verbose: bool = False,
                  *args, **kwargs):
 
         # Task queue receives tuples (task_id, task) where task is the argument for Worker.run_task() implementation
@@ -61,9 +59,8 @@ class Worker:
         # None for infinite
         self._task_event_timeout = task_event_timeout
 
-    @abstractmethod
-    def run_task(self, argument:object) -> object:
-        pass
+        # If True enables debug output
+        self._verbose = verbose
 
     def push_result_to_queue(self, task_id:Union[int, None], result:object):
         # Pushes result to Worker.result_queue (to Master class) and notifies it
@@ -71,7 +68,7 @@ class Worker:
         self._result_event.set()
 
     def run(self):
-        if self.DEBUG:
+        if self._verbose:
             print('[Worker]: Run!')
         while True:
             if self.CHECK_QUEUE_BEFORE_TASK_AWAITING and self._task_queue.empty() or not self.CHECK_QUEUE_BEFORE_TASK_AWAITING:
@@ -84,14 +81,14 @@ class Worker:
             pending_tasks = list()
             while not self._task_queue.empty():
                 new_task = self._task_queue.get(block=False)  # Only one queue-reader so blocking is meaningless
-                if self.DEBUG:
+                if self._verbose:
                     print(f'[Worker]: Task events rcvd {repr(new_task)}')
                 pending_tasks.append(new_task)
 
             # Check for Halt events
             for task_id, task in pending_tasks:
                 if isinstance(task, Worker.Halt):
-                    if self.DEBUG:
+                    if self._verbose:
                         print('[Worker]: Halt!')
                     # Exit run() cycle and finish the process
                     return
@@ -105,7 +102,7 @@ class Worker:
 
                 self.push_result_to_queue(task_id, result)
 
-            # Tell the worker is awaiting for tasks
+            # Tell the worker is awaiting tasks
             self._task_event.clear()
 
     @classmethod
@@ -132,17 +129,18 @@ class Worker:
                  task_event:multiprocessing.Event,
                  result_event: multiprocessing.Event,
                  task_event_timeout: Union[float, None] = EVENT_TIMEOUT,
+                 verbose: bool = False,
                  **kwargs):
-        if Worker.DEBUG:
+        if verbose:
             print(f'[Worker]: WorkerProcess of {cls.__name__} with {repr(kwargs)}')
 
         _kwargs =  {
-                    #'cls': cls,
                     'task_queue': task_queue,
                     'result_queue': result_queue,
                     'task_event': task_event,
                     'result_event': result_event,
                     'task_event_timeout': task_event_timeout,
+                    'verbose': verbose
                    }
         _kwargs.update(kwargs)
 
@@ -152,5 +150,10 @@ class Worker:
         )
         worker_process.start()
         return worker_process
+
+    # ------------------------------------------------- USER DEFINED ---------------------------------------------------
+    @abstractmethod
+    def run_task(self, argument:object) -> object:
+        pass
 
 

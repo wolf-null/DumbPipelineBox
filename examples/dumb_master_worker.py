@@ -1,6 +1,5 @@
 from master_worker.worker import Worker
 from master_worker.master import Master
-from random import randint
 import time
 
 
@@ -19,9 +18,9 @@ class DumbWorker(Worker):
 
 
 if __name__ == '__main__':
-    with Master(DumbWorker) as dumb_master:
+    with Master(DumbWorker, verbose=True) as dumb_master:
         # Add workers. name is just the parameter we defined. It is not present in the base Worker class
-        dumb_master.add_worker(name='WORKER-Alice')
+        dumb_master.add_worker(name='WORKER-Alice', verbose=True)
         dumb_master.add_worker(name='WORKER-Bob')
 
         for task_id, result in dumb_master.run('dumb-task-1', 'dumb-task-2', 'dumb-task-3', 'dumb-task-4', 'dumb-task-5'):
