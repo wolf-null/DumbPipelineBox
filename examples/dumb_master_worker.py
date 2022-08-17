@@ -1,5 +1,5 @@
-from lib.worker import Worker
-from lib.master import Master
+from master_worker.worker import Worker
+from master_worker.master import Master
 from random import randint
 import time
 

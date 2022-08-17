@@ -1,6 +1,6 @@
-from lib.worker import Worker
-from lib.master import Master
-from lib.monitors.workload_max_counter import WorkloadMaxCounter
+from master_worker.worker import Worker
+from master_worker.master import Master
+from master_worker.monitors.workload_max_counter import WorkloadMaxCounter
 from random import randint
 
 
@@ -28,9 +28,12 @@ if __name__ == '__main__':
         dumb_master.add_worker(name='WORKER-Charlie')
         dumb_master.add_worker(name='WORKER-Dave')
 
+        last_result = None
         for task_id, result in dumb_master.run(*[f'task{str(t).zfill(5)}' for t in range(10000)]):
             #print(f'[DumbTest]: {repr(result)}')
+            last_result = result
             print(monitor)
     print('[DumbTest]: All done')
+    print('[DumbTest]: Last ', last_result)
 
 
